@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">記事一覧</h1>
+
+<div class="mb-4">
+  <input
+    type="text"
+    name="q"
+    value="{{ q }}"
+    placeholder="タイトル検索..."
+    hx-get="/articles"
+    hx-target="#article-list"
+    hx-select="#article-list"
+    hx-trigger="input delay:400ms"
+    hx-include="[name='q']"
+    class="w-full max-w-md border border-gray-300 rounded px-3 py-2 text-sm"
+  >
+</div>
+
+<div id="article-list" class="flex flex-col gap-3">
+  {% for article in articles %}
+  <div class="border border-gray-200 rounded p-4 bg-white">
+    <div class="flex justify-between items-start gap-4">
+      <a href="{{ article.url | safe_url }}" target="_blank" rel="noopener noreferrer"
+         class="text-blue-700 hover:underline font-medium text-sm leading-snug">
+        {{ article.title }}
+      </a>
+      <span class="text-xs text-gray-400 shrink-0">{{ article.feed.name }}</span>
+    </div>
+    <div class="mt-1 flex gap-4 text-xs text-gray-500">
+      <span>{{ article.published_at or "日時不明" }}</span>
+      {% if article.ai_reason %}
+      <span class="text-green-700">{{ article.ai_reason }}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-gray-400">記事がありません</p>
+  {% endfor %}
+</div>
+{% endblock %}

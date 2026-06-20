@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>News Collector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <nav class="bg-white border-b border-gray-200 px-6 py-3 flex gap-6">
+    <a href="/feeds" class="text-blue-600 hover:underline font-medium">フィード管理</a>
+    <a href="/interests" class="text-blue-600 hover:underline font-medium">興味設定</a>
+    <a href="/articles" class="text-blue-600 hover:underline font-medium">記事一覧</a>
+  </nav>
+  <main class="max-w-5xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

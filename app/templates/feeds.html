@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">フィード管理</h1>
+
+<table class="w-full text-sm border-collapse mb-8">
+  <thead>
+    <tr class="bg-gray-100 text-left">
+      <th class="border border-gray-300 px-3 py-2">名前</th>
+      <th class="border border-gray-300 px-3 py-2">URL</th>
+      <th class="border border-gray-300 px-3 py-2">間隔(分)</th>
+      <th class="border border-gray-300 px-3 py-2">有効</th>
+      <th class="border border-gray-300 px-3 py-2">最終取得</th>
+      <th class="border border-gray-300 px-3 py-2">操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for feed in feeds %}
+    <tr class="hover:bg-gray-50">
+      <td class="border border-gray-300 px-3 py-2">{{ feed.name }}</td>
+      <td class="border border-gray-300 px-3 py-2 max-w-xs truncate">
+        <a href="{{ feed.url }}" target="_blank" class="text-blue-600 hover:underline">{{ feed.url }}</a>
+      </td>
+      <td class="border border-gray-300 px-3 py-2">{{ feed.interval_min }}</td>
+      <td class="border border-gray-300 px-3 py-2">{{ "○" if feed.enabled else "×" }}</td>
+      <td class="border border-gray-300 px-3 py-2">{{ feed.last_fetched_at or "—" }}</td>
+      <td class="border border-gray-300 px-3 py-2 flex gap-2">
+        <form method="post" action="/feeds/{{ feed.id }}/toggle">
+          <button type="submit" class="text-xs px-2 py-1 bg-yellow-100 border border-yellow-400 rounded hover:bg-yellow-200">
+            {{ "無効化" if feed.enabled else "有効化" }}
+          </button>
+        </form>
+        <form method="post" action="/feeds/{{ feed.id }}/delete" onsubmit="return confirm('削除しますか？')">
+          <button type="submit" class="text-xs px-2 py-1 bg-red-100 border border-red-400 rounded hover:bg-red-200">
+            削除
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="border border-gray-300 px-3 py-2 text-center text-gray-400">フィードがありません</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2 class="text-lg font-semibold mb-2">フィードを追加</h2>
+<form method="post" action="/feeds" class="flex flex-col gap-3 max-w-lg">
+  <div>
+    <label class="block text-sm font-medium mb-1">名前</label>
+    <input type="text" name="name" required class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">URL</label>
+    <input type="url" name="url" required class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">取得間隔（分）</label>
+    <input type="number" name="interval_min" value="60" min="1" required class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+  </div>
+  <button type="submit" class="self-start px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">追加</button>
+</form>
+{% endblock %}

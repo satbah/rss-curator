@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">興味設定</h1>
+
+<ul class="mb-8 flex flex-col gap-3">
+  {% for interest in interests %}
+  <li class="border border-gray-200 rounded p-4 bg-white flex justify-between items-start">
+    <div>
+      <div class="font-medium">{{ interest.name }}</div>
+      <div class="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{{ interest.description }}</div>
+    </div>
+    <form method="post" action="/interests/{{ interest.id }}/delete" onsubmit="return confirm('削除しますか？')">
+      <button type="submit" class="text-xs px-2 py-1 bg-red-100 border border-red-400 rounded hover:bg-red-200 ml-4 shrink-0">
+        削除
+      </button>
+    </form>
+  </li>
+  {% else %}
+  <li class="text-gray-400">興味設定がありません</li>
+  {% endfor %}
+</ul>
+
+<h2 class="text-lg font-semibold mb-2">興味を追加</h2>
+<form method="post" action="/interests" class="flex flex-col gap-3 max-w-lg">
+  <div>
+    <label class="block text-sm font-medium mb-1">名前</label>
+    <input type="text" name="name" required class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">説明</label>
+    <textarea name="description" required rows="3" class="w-full border border-gray-300 rounded px-3 py-2 text-sm"></textarea>
+  </div>
+  <button type="submit" class="self-start px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">追加</button>
+</form>
+{% endblock %}

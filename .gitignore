@@ -1,0 +1,28 @@
+# 環境設定（APIキー等）
+.env
+
+# データベース
+data/
+
+# ログ
+*.log
+server.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.uv/
+
+# uv
+uv.lock
+
+# PDF
+*.pdf
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*~
