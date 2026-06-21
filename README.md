@@ -143,7 +143,9 @@ ollama list
 ./reset.sh
 ```
 
-seenguid（取得済み記事の記録）と article（保存記事）をクリアします。フィード設定・興味設定は保持されます。
+seenguid（取得済み記事の記録）と article（保存記事）をクリアし、各フィードの etag /
+last_modified もリセットします（これがないと再ポーリングが 304 になり再取得できないため）。
+フィード設定・興味設定は保持されます。
 
 ---
 
@@ -158,8 +160,18 @@ OLLAMA_BASE_URL=http://localhost:11434
 # 使用モデル（ollama pull で取得したモデル名）
 OLLAMA_MODEL=qwen2.5:7b
 
-# 同時推論リクエスト数（Ollama はシングルプロセスなので 2〜4 が目安）
+# 同時推論リクエスト数（プロセス全体で共有。複数フィードが同時にポーリングされても
+# この数を超えて Ollama へリクエストが殺到しない。2〜4 が目安）
 OLLAMA_CONCURRENCY=2
+
+# Ollama への 1 リクエストのタイムアウト秒数（混雑時のキュー待ちを考慮し長めに設定）
+OLLAMA_TIMEOUT=180
+
+# 起動時に各フィードのポーリング開始をずらす秒数（一斉アクセスによる過負荷を回避）
+FEED_START_STAGGER_SEC=10
+
+# RSS フェッチ（feedparser）のネットワークタイムアウト秒数（応答しないフィード対策）
+FEED_FETCH_TIMEOUT=20
 
 # SQLite DB ファイルパス
 DB_PATH=data/news.db

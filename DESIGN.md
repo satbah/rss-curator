@@ -67,7 +67,8 @@ CREATE TABLE article (
     UNIQUE (feed_id, guid)  -- DB レベルの重複排除安全網
 );
 
--- 重複排除用（判定不合格記事も含む全既読GUID）
+-- 重複排除用（判定不合格記事も含む全既読GUID。ただし LLM 呼び出しが
+--   一時エラー（タイムアウト等）になった記事は登録せず、次回リトライする）
 CREATE TABLE seenguid (
     feed_id INTEGER REFERENCES feed(id),
     guid    TEXT NOT NULL,
@@ -81,7 +82,7 @@ CREATE TABLE seenguid (
 
 ### フィルタリング方式
 
-Ollama の `/api/chat` エンドポイントを `httpx.AsyncClient` で呼び出す。`format: "json"` オプションで JSON 出力を強制し、`temperature: 0` で判定の一貫性を確保。
+Ollama の `/api/chat` エンドポイントを `httpx.AsyncClient` で呼び出す。`format: "json"` オプションで JSON 出力を強制し、`temperature: 0` で判定の一貫性を確保。`num_predict` は判定理由（日本語1文）が途中で切れて JSON が壊れないよう余裕を持たせる（256）。
 
 ```
 [System]
@@ -104,7 +105,16 @@ Ollama の `/api/chat` エンドポイントを `httpx.AsyncClient` で呼び出
 
 ### 並列制御
 
-Ollama はシングルプロセスのため、`asyncio.Semaphore(OLLAMA_CONCURRENCY)` で同時リクエスト数を制限（デフォルト 2）。
+Ollama はシングルプロセスのため、`asyncio.Semaphore(OLLAMA_CONCURRENCY)` で同時リクエスト数を制限（デフォルト 2）。このセマフォは **module レベルでプロセス全体に 1 つだけ生成・共有** する。呼び出しごとに生成すると、複数フィードが同時にポーリングされたとき `OLLAMA_CONCURRENCY × フィード数` 本のリクエストが Ollama に殺到し、キューが溢れてタイムアウトの連鎖を起こすため。
+
+### エラーハンドリング
+
+LLM 呼び出しの失敗を 2 種類に分けて扱う。
+
+| 種類 | 例 | 扱い |
+|---|---|---|
+| 一時エラー（transient） | タイムアウト・接続失敗・HTTP 5xx | `seenguid` に登録せず、次回ポーリングでリトライ |
+| 出力解析エラー | モデルが壊れた JSON を返す | no-match 扱いで `seenguid` に登録（再試行しても直りにくいため無限ループを防ぐ） |
 
 ### 重複排除の多層構造
 
@@ -125,6 +135,7 @@ news/
 │   ├── models.py            # Peewee モデル定義
 │   ├── scheduler.py         # APScheduler + RSS ポーリングロジック
 │   ├── ai_filter.py         # Ollama HTTP 呼び出し、フィルタリングロジック
+│   ├── seed.py              # 初期データ（フィード・興味）の冪等シード
 │   ├── templates/
 │   │   ├── base.html        # 共通レイアウト（HTMX 読み込み）
 │   │   ├── feeds.html       # フィード管理 UI
@@ -140,7 +151,7 @@ news/
 ├── .env                     # 設定（gitignore）
 ├── .env.example             # 設定テンプレート
 ├── restart.sh               # サーバー再起動スクリプト
-├── reset.sh                 # seenguid + article クリア（再収集用）
+├── reset.sh                 # seenguid + article クリア + etag リセット（再収集用）
 ├── README.md
 └── DESIGN.md                # 本ドキュメント
 ```
@@ -152,8 +163,8 @@ news/
 | 判断 | 内容 |
 |---|---|
 | ローカル LLM | Ollama + qwen2.5:7b を採用。外部 API コストゼロ。CPU 推論のみで動作するため GPU 不要 |
-| 起動時即時ポーリング | `next_run_time=datetime.now(utc)` でサーバー起動直後に全フィードを取得。60分待ちを排除 |
-| 同期パーサーの非同期化 | `feedparser` は同期 I/O のため `loop.run_in_executor` でスレッドプールに逃がし、イベントループをブロックしない |
-| 重複排除の分離 | `seenguid` を独立テーブルにすることで、AI に落とされた記事も「既読」として扱い、再処理・再課金を防ぐ |
+| 起動時の時間差ポーリング | サーバー起動直後に全フィードを取得するが、`FEED_START_STAGGER_SEC` 秒ずつ開始をずらす（`next_run_time = now + index × stagger`）。全フィード同時取得による LLM への一斉リクエストを防ぎつつ、60分待ちも排除 |
+| 同期パーサーの非同期化 | `feedparser` は同期 I/O のため `loop.run_in_executor` でスレッドプールに逃がし、イベントループをブロックしない。`feedparser` 自体はネットワークタイムアウトを持たないため、`socket.setdefaulttimeout(FEED_FETCH_TIMEOUT)` を設定し、応答しないフィードがワーカースレッドを占有し続けるのを防ぐ |
+| 重複排除の分離 | `seenguid` を独立テーブルにすることで、AI に落とされた記事も「既読」として扱い、再処理を防ぐ。ただし LLM 呼び出しが一時エラーになった記事は既読にせず、次回リトライする |
 | インタレスト定義の粒度 | 自然文 1〜数文で記述。LLM がコンテキストを解釈するため、タグ・キーワード管理より柔軟 |
 | URL スキーム検証 | `http://` / `https://` のみ受け付け、`file://` 等の SSRF を防止 |
