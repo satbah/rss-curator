@@ -2,7 +2,8 @@ import asyncio
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone
+import socket
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -13,6 +14,12 @@ from app.ai_filter import filter_articles
 from app.models import Article, Feed, Interest, SeenGuid
 
 logger = logging.getLogger(__name__)
+
+# feedparser はデフォルトでネットワークタイムアウトを持たないため、応答しない
+# フィードがあるとフェッチが無限にハングし、ワーカースレッドを占有してしまう。
+# socket のデフォルトタイムアウトを設定して取りこぼしを防ぐ（httpx は独自に
+# タイムアウトを管理するため影響しない）。
+socket.setdefaulttimeout(float(os.getenv("FEED_FETCH_TIMEOUT", "20")))
 
 
 def _entry_guid(entry) -> str:
@@ -29,14 +36,18 @@ def setup_scheduler() -> AsyncIOScheduler:
     jobstore = SQLAlchemyJobStore(url=f"sqlite:///{db_path}")
     scheduler = AsyncIOScheduler(jobstores={"default": jobstore})
 
-    for feed in Feed.select().where(Feed.enabled == True):  # noqa: E712
+    # 全フィードを同時に起動すると LLM へのリクエストが殺到して
+    # タイムアウトするため、初回実行を数秒ずつずらす（thundering herd 回避）。
+    base = datetime.now(timezone.utc)
+    stagger = int(os.getenv("FEED_START_STAGGER_SEC", "10"))
+    for i, feed in enumerate(Feed.select().where(Feed.enabled == True)):  # noqa: E712
         scheduler.add_job(
             _poll_feed,
             trigger=IntervalTrigger(minutes=feed.interval_min),
             id=f"feed_{feed.id}",
             args=[feed.id],
             replace_existing=True,
-            next_run_time=datetime.now(timezone.utc),
+            next_run_time=base + timedelta(seconds=i * stagger),
         )
 
     return scheduler
@@ -51,10 +62,15 @@ async def _poll_feed(feed_id: int) -> None:
         return
 
     loop = asyncio.get_running_loop()
-    parsed = await loop.run_in_executor(
-        None,
-        lambda: feedparser.parse(feed.url, etag=feed.etag, modified=feed.last_modified),
-    )
+    try:
+        parsed = await loop.run_in_executor(
+            None,
+            lambda: feedparser.parse(feed.url, etag=feed.etag, modified=feed.last_modified),
+        )
+    except Exception as exc:
+        # フェッチ失敗（タイムアウト等）。今回はスキップし次回ポーリングでリトライ。
+        logger.warning("feed %d fetch failed: %s: %s", feed_id, type(exc).__name__, exc)
+        return
 
     now = datetime.utcnow()
 
@@ -107,9 +123,9 @@ async def _poll_feed(feed_id: int) -> None:
         )
 
     if interest_descriptions:
-        matched = await filter_articles(entry_dicts, interest_descriptions)
+        matched, errored = await filter_articles(entry_dicts, interest_descriptions)
     else:
-        matched = []
+        matched, errored = [], []
 
     matched_guids = set()
     for entry_dict, reason in matched:
@@ -132,9 +148,15 @@ async def _poll_feed(feed_id: int) -> None:
         except Exception:
             logger.exception("Failed to insert article guid=%r", entry_dict["guid"])
 
-    SeenGuid.insert_many(
-        [{"feed": feed_id, "guid": guid} for guid in incoming]
-    ).on_conflict_ignore().execute()
+    # LLM 呼び出しが失敗した記事は seen 扱いにせず、次回ポーリングでリトライする。
+    errored_guids = {entry["guid"] for entry in errored}
+    seen_rows = [
+        {"feed": feed_id, "guid": guid}
+        for guid in incoming
+        if guid not in errored_guids
+    ]
+    if seen_rows:
+        SeenGuid.insert_many(seen_rows).on_conflict_ignore().execute()
 
     Feed.update(
         last_fetched_at=now,

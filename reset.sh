@@ -20,5 +20,10 @@ if [[ "$ans" != [yY] ]]; then
   exit 0
 fi
 
-sqlite3 "$DB" "DELETE FROM seenguid; DELETE FROM article;"
+sqlite3 "$DB" "
+  DELETE FROM seenguid;
+  DELETE FROM article;
+  -- etag/last_modified を残すと再ポーリングが 304 になり再取得できないためクリア
+  UPDATE feed SET etag = NULL, last_modified = NULL, last_fetched_at = NULL;
+"
 echo "クリアしました。次回ポーリング時に全記事を再取得・再判定します。"
